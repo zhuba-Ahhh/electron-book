@@ -52,7 +52,43 @@ export default function Bookshelf({ onImportSuccess, onSelectNovel }: BookshelfP
   const loadNovels = async (): Promise<void> => {
     try {
       const novelList = await window.electron.ipcRenderer.invoke('get-all-novels')
-      setNovels(novelList)
+      // 获取每本小说的阅读进度
+      const novelsWithProgress = await Promise.all(
+        novelList.map(async (novel) => {
+          const progress = await window.electron.ipcRenderer.invoke('get-progress', novel.id)
+          if (progress) {
+            // 计算当前阅读的章节
+            let currentChapter = 0
+            let totalOffset = 0
+            const content = JSON.parse(novel?.content || '{}')
+
+            for (let i = 0; i < content?.chapters.length; i++) {
+              const chapterLength = content?.chapters[i].content?.length || 0
+              if (
+                progress.scroll_position >= totalOffset &&
+                progress.scroll_position < totalOffset + chapterLength
+              ) {
+                currentChapter = i
+                break
+              }
+              totalOffset += chapterLength
+            }
+
+            return {
+              ...novel,
+              currentChapter: content?.chapters[currentChapter]?.title || '',
+              readProgress:
+                totalOffset /
+                (content.chapters.reduce(
+                  (acc, chapter) => acc + (chapter.content?.length || 0),
+                  0
+                ) || 1)
+            }
+          }
+          return novel
+        })
+      )
+      setNovels(novelsWithProgress)
     } catch (error) {
       console.error('加载小说列表失败:', error)
     }

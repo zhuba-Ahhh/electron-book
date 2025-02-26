@@ -37,6 +37,8 @@ export default function Reader({ novel, onBack }: ReaderProps): JSX.Element | nu
     try {
       const parsedContent = JSON.parse(novel.content)
       setNovelData(parsedContent)
+      // 在设置小说数据后立即加载进度
+      loadProgress()
     } catch (error) {
       console.error('解析小说内容失败:', error)
     }
@@ -56,65 +58,133 @@ export default function Reader({ novel, onBack }: ReaderProps): JSX.Element | nu
   const currentContent = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE
     const end = start + ITEMS_PER_PAGE
-    return (
-      currentChapter.content
-        ?.slice(start, end)
-        .split('\n\n')
-        .map((paragraph) => paragraph.trim())
-        .filter((paragraph) => paragraph.length > 0) || []
-    )
-  }, [currentChapter, currentPage])
+    const content = currentChapter.content || ''
 
-  useEffect(() => {
-    loadProgress()
-  }, [])
+    // 找到完整段落的边界
+    let actualEnd = end
+    if (actualEnd < content.length) {
+      // 寻找下一个段落的开始位置
+      while (actualEnd < content.length && content[actualEnd] !== '\n') {
+        actualEnd++
+      }
+    }
+
+    return content
+      .slice(start, actualEnd)
+      .split('\n\n')
+      .map((paragraph) => paragraph.trim())
+      .filter((paragraph) => paragraph.length > 0)
+  }, [currentChapter, currentPage])
 
   const loadProgress = async (): Promise<void> => {
     try {
       const savedProgress = await window.electron.ipcRenderer.invoke('get-progress', novel.id)
-      if (savedProgress) {
+      if (savedProgress && novelData?.chapters) {
         setProgress(savedProgress)
-        // 根据保存的滚动位置计算章节和页码
-        novelData?.chapters.reduce((acc, chapter, index) => {
-          if (savedProgress.scroll_position >= acc) {
-            setCurrentChapterIndex(index)
-            const chapterStart = acc
-            const relativePosition = savedProgress.scroll_position - chapterStart
-            const page = Math.floor(relativePosition / ITEMS_PER_PAGE) + 1
-            setCurrentPage(Math.min(page, totalPages))
+        let totalOffset = 0
+        let targetChapterIndex = 0
+        let targetPage = 1
+
+        // 遍历章节找到目标位置
+        for (let i = 0; i < novelData.chapters.length; i++) {
+          const chapterLength = novelData.chapters[i].content?.length || 0
+          if (
+            savedProgress.scroll_position >= totalOffset &&
+            savedProgress.scroll_position < totalOffset + chapterLength
+          ) {
+            targetChapterIndex = i
+            const relativePosition = savedProgress.scroll_position - totalOffset
+            targetPage = Math.floor(relativePosition / ITEMS_PER_PAGE) + 1
+            break
           }
-          return acc + (chapter.content?.length || 0)
-        }, 0)
+          totalOffset += chapterLength
+        }
+
+        setCurrentChapterIndex(targetChapterIndex)
+        setCurrentPage(targetPage)
       }
     } catch (error) {
       console.error('加载阅读进度失败:', error)
     }
   }
 
-  const handlePageChange = (_event: React.ChangeEvent<unknown>, page: number): void => {
-    setCurrentPage(page)
-    // 计算总字符偏移量
-    const chapterOffset =
-      novelData?.chapters.reduce((acc, chapter, index) => {
-        if (index < currentChapterIndex) {
-          return acc + (chapter.content?.length || 0)
-        }
-        return acc
-      }, 0) || 0
-    // 保存阅读进度
-    const scrollPosition = chapterOffset + (page - 1) * ITEMS_PER_PAGE
-    window.electron.ipcRenderer.invoke(
-      'save-progress',
-      novel.id,
-      currentChapterIndex,
-      scrollPosition
-    )
-  }
-
   const handleChapterChange = (event: SelectChangeEvent<number>): void => {
     const newIndex = event.target.value as number
     setCurrentChapterIndex(newIndex)
     setCurrentPage(1) // 切换章节时重置页码
+
+    // 计算并保存阅读进度
+    const chapterOffset =
+      novelData?.chapters.reduce((acc, chapter, index) => {
+        if (index < newIndex) {
+          return acc + (chapter.content?.length || 0)
+        }
+        return acc
+      }, 0) || 0
+
+    window.electron.ipcRenderer.invoke('save-progress', novel.id, newIndex, chapterOffset)
+  }
+
+  const handlePageChange = (_event: React.ChangeEvent<unknown>, page: number): void => {
+    if (page === 0 && currentChapterIndex > 0) {
+      // 当前在第一页，并且还有上一章时，跳转到上一章的最后一页
+      const prevChapter = novelData?.chapters[currentChapterIndex - 1]
+      const prevChapterPages = Math.ceil((prevChapter?.content?.length || 0) / ITEMS_PER_PAGE)
+      setCurrentChapterIndex(currentChapterIndex - 1)
+      setCurrentPage(prevChapterPages)
+      // 计算并保存阅读进度
+      const chapterOffset =
+        novelData?.chapters.reduce((acc, chapter, index) => {
+          if (index < currentChapterIndex - 1) {
+            return acc + (chapter.content?.length || 0)
+          }
+          return acc
+        }, 0) || 0
+      const scrollPosition = chapterOffset + (prevChapterPages - 1) * ITEMS_PER_PAGE
+      window.electron.ipcRenderer.invoke(
+        'save-progress',
+        novel.id,
+        currentChapterIndex - 1,
+        scrollPosition
+      )
+    } else if (page > totalPages && currentChapterIndex < (novelData?.chapters.length || 0) - 1) {
+      // 当前在最后一页，并且还有下一章时，跳转到下一章的第一页
+      setCurrentChapterIndex(currentChapterIndex + 1)
+      setCurrentPage(1)
+      // 计算并保存阅读进度
+      const chapterOffset =
+        novelData?.chapters.reduce((acc, chapter, index) => {
+          if (index < currentChapterIndex + 1) {
+            return acc + (chapter.content?.length || 0)
+          }
+          return acc
+        }, 0) || 0
+      window.electron.ipcRenderer.invoke(
+        'save-progress',
+        novel.id,
+        currentChapterIndex + 1,
+        chapterOffset
+      )
+    } else {
+      // 正常翻页
+      setCurrentPage(page)
+      // 计算总字符偏移量
+      const chapterOffset =
+        novelData?.chapters.reduce((acc, chapter, index) => {
+          if (index < currentChapterIndex) {
+            return acc + (chapter.content?.length || 0)
+          }
+          return acc
+        }, 0) || 0
+      // 保存阅读进度
+      const scrollPosition = chapterOffset + (page - 1) * ITEMS_PER_PAGE
+      window.electron.ipcRenderer.invoke(
+        'save-progress',
+        novel.id,
+        currentChapterIndex,
+        scrollPosition
+      )
+    }
   }
 
   const handlePrevChapter = (): void => {
@@ -234,7 +304,13 @@ export default function Reader({ novel, onBack }: ReaderProps): JSX.Element | nu
           }
         }}
       >
-        <Typography variant="h5" gutterBottom align="center" sx={{ mb: 4 }}>
+        <Typography
+          variant="h5"
+          gutterBottom
+          align="center"
+          sx={{ mb: 4 }}
+          style={{ display: currentPage === 1 ? 'block' : 'none' }}
+        >
           {currentChapter.title}
         </Typography>
         {currentContent.map((paragraph, index) => (

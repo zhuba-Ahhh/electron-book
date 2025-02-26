@@ -17,15 +17,20 @@ function App(): JSX.Element {
     setCurrentNovel(novel)
   }
 
-  const handleSelectNovel = (novel: Novel): void => {
+  const handleSelectNovel = async (novel: Novel): Promise<void> => {
     if (novel) {
-      // 将Novel类型转换为ImportNovelResult类型
-      const novelResult: ImportNovelResult = {
-        id: novel.id,
-        title: novel.title,
-        content: '' // 这里需要从文件中读取内容，暂时设置为空字符串
+      try {
+        const fullNovel = await window.electron.ipcRenderer.invoke('get-novel', novel.id)
+        // 将Novel类型转换为ImportNovelResult类型，并包含完整的小说内容
+        const novelResult: ImportNovelResult = {
+          id: novel.id,
+          title: novel.title,
+          content: fullNovel.content // 使用从后端获取的完整小说内容
+        }
+        setCurrentNovel(novelResult)
+      } catch (error) {
+        console.error('获取小说内容失败:', error)
       }
-      setCurrentNovel(novelResult)
     }
   }
 

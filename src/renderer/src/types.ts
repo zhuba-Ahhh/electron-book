@@ -8,6 +8,7 @@ export interface Novel {
   updated_at: string
   lastReadTime?: string
   readProgress?: number
+  content?: string
 }
 
 export interface ReadingProgress {
@@ -39,7 +40,7 @@ declare global {
           chapterIndex: number,
           scrollPosition: number
         ): Promise<void>
-        invoke(channel: 'get-novel', novelId: number): Promise<Novel>
+        invoke(channel: 'get-novel', novelId: number): Promise<Novel & { content: string }>
         invoke(channel: 'get-progress', novelId: number): Promise<ReadingProgress | undefined>
         invoke(channel: 'delete-novel', novelId: number): Promise<void>
       }

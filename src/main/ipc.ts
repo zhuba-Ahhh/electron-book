@@ -1,7 +1,7 @@
 import { ipcMain, dialog } from 'electron'
 import { readFile } from 'fs/promises'
 import { basename } from 'path'
-import { NovelModel, ProgressModel } from './database/models'
+import { NovelModel } from './database/models'
 import iconv from 'iconv-lite'
 import jschardet from 'jschardet'
 
@@ -110,7 +110,7 @@ export function setupIPC(): void {
 
         // 检查是否已存在相同文件路径的小说
         const existingNovel = NovelModel.getNovelByPath.get(filePath)
-        let novelId
+        let novelId: string
 
         if (existingNovel) {
           // 更新现有小说
@@ -118,7 +118,7 @@ export function setupIPC(): void {
           novelId = existingNovel.id
 
           // 重置阅读进度
-          NovelModel.deleteNovelProgress.run(novelId)
+          NovelModel.saveProgress.run(novelId, 0, 0)
         } else {
           // 添加新小说
           const info = NovelModel.addNovel.run(title, author, filePath, '', structuredContent)
@@ -150,7 +150,7 @@ export function setupIPC(): void {
     'save-progress',
     (_event, novelId: number, chapterIndex: number, scrollPosition: number) => {
       try {
-        return ProgressModel.saveProgress.run(novelId, chapterIndex, scrollPosition)
+        return NovelModel.saveProgress.run(novelId, chapterIndex, scrollPosition)
       } catch (error) {
         console.error('保存阅读进度失败:', error)
         throw error
@@ -161,7 +161,7 @@ export function setupIPC(): void {
   // 获取阅读进度
   ipcMain.handle('get-progress', (_event, novelId: number) => {
     try {
-      return ProgressModel.getProgress.get(novelId)
+      return NovelModel.getProgress.get(novelId)
     } catch (error) {
       console.error('获取阅读进度失败:', error)
       throw error
@@ -171,9 +171,7 @@ export function setupIPC(): void {
   // 删除小说
   ipcMain.handle('delete-novel', (_event, novelId: number) => {
     try {
-      // 先删除阅读进度
-      NovelModel.deleteNovelProgress.run(novelId)
-      // 再删除小说
+      // 直接删除小说即可，阅读进度已经包含在小说表中
       NovelModel.deleteNovel.run(novelId)
       return true
     } catch (error) {
