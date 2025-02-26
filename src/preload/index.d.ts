@@ -3,13 +3,13 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 interface IpcRenderer {
   invoke(
     channel: 'get-progress',
-    novelId: string
+    novelId: number
   ): Promise<{
     scroll_position: number
   } | null>
   invoke(
     channel: 'save-progress',
-    novelId: string,
+    novelId: number,
     chapterId: number,
     scrollPosition: number
   ): Promise<void>

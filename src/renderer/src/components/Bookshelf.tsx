@@ -112,11 +112,9 @@ export default function Bookshelf({ onImportSuccess, onSelectNovel }: BookshelfP
   }
 
   const handleNovelClick = async (novel: Novel): Promise<void> => {
-    console.log('[32m [ novel ]-79-「components/Bookshelf.tsx」 [0m', novel)
     if (onSelectNovel) {
       try {
         const fullNovel = await window.electron.ipcRenderer.invoke('get-novel', novel.id)
-        console.log('[32m [ fullNovel ]-82-「components/Bookshelf.tsx」 [0m', fullNovel)
         onSelectNovel(fullNovel)
       } catch (error) {
         console.error('获取小说内容失败:', error)
