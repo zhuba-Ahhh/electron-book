@@ -125,11 +125,6 @@ export default function Reader({ novel, onBack }: ReaderProps): JSX.Element | nu
 
   // 保存阅读进度
   const saveProgress = async (chapterIndex: number, offset: number): Promise<void> => {
-    console.log(
-      '[32m [ chapterIndex: number, offset: number ]-128-「components/Reader.tsx」 [0m',
-      chapterIndex,
-      offset
-    )
     await window.electron.ipcRenderer.invoke('save-progress', novel.id, chapterIndex, offset)
   }
 
@@ -146,24 +141,30 @@ export default function Reader({ novel, onBack }: ReaderProps): JSX.Element | nu
     _event: React.ChangeEvent<unknown>,
     page: number
   ): Promise<void> => {
-    if (page === 0 && currentChapterIndex > 0) {
-      // 上一章最后一页
-      const prevChapter = novelData?.chapters[currentChapterIndex - 1]
-      const prevChapterPages = Math.ceil((prevChapter?.content?.length || 0) / ITEMS_PER_PAGE)
-      setCurrentChapterIndex(currentChapterIndex - 1)
-      setCurrentPage(prevChapterPages)
-      const offset =
-        calculateCharsBeforeChapter(currentChapterIndex - 1) +
-        (prevChapterPages - 1) * ITEMS_PER_PAGE
-      await saveProgress(currentChapterIndex - 1, offset)
-    } else if (page > totalPages && currentChapterIndex < (novelData?.chapters?.length || 0) - 1) {
-      // 下一章第一页
-      setCurrentChapterIndex(currentChapterIndex + 1)
-      setCurrentPage(1)
-      await saveProgress(
-        currentChapterIndex + 1,
-        calculateCharsBeforeChapter(currentChapterIndex + 1)
-      )
+    // 当前页为第1页，点击上一页按钮（page为0）时，跳转到上一章最后一页
+    if (page === 0) {
+      if (currentChapterIndex > 0) {
+        // 上一章最后一页
+        const prevChapter = novelData?.chapters[currentChapterIndex - 1]
+        const prevChapterPages = Math.ceil((prevChapter?.content?.length || 0) / ITEMS_PER_PAGE)
+        setCurrentChapterIndex(currentChapterIndex - 1)
+        setCurrentPage(prevChapterPages)
+        const offset =
+          calculateCharsBeforeChapter(currentChapterIndex - 1) +
+          (prevChapterPages - 1) * ITEMS_PER_PAGE
+        await saveProgress(currentChapterIndex - 1, offset)
+      }
+      // 当前页为最后一页，点击下一页按钮（page大于totalPages）时，跳转到下一章第一页
+    } else if (page > totalPages) {
+      if (currentChapterIndex < (novelData?.chapters?.length || 0) - 1) {
+        // 下一章第一页
+        setCurrentChapterIndex(currentChapterIndex + 1)
+        setCurrentPage(1)
+        await saveProgress(
+          currentChapterIndex + 1,
+          calculateCharsBeforeChapter(currentChapterIndex + 1)
+        )
+      }
     } else {
       // 当前章节内翻页
       setCurrentPage(page)
@@ -291,6 +292,22 @@ export default function Reader({ novel, onBack }: ReaderProps): JSX.Element | nu
             size="small"
             siblingCount={1}
             boundaryCount={1}
+            showFirstButton
+            showLastButton
+            getItemAriaLabel={(type) => {
+              switch (type) {
+                case 'first':
+                  return '第一页'
+                case 'last':
+                  return '最后一页'
+                case 'next':
+                  return '下一页'
+                case 'previous':
+                  return '上一页'
+                default:
+                  return `第${type}页`
+              }
+            }}
           />
           <IconButton
             onClick={handleNextChapter}
